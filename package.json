@@ -1,0 +1,25 @@
+{
+  "name": "dizi-film-watch-party",
+  "version": "1.0.0",
+  "description": "Sevgilinizle veya arkadaşınızla aynı anda senkronize video izleme platformu (Watch Party)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "keywords": [
+    "watch-party",
+    "sync-video",
+    "youtube-sync",
+    "socketio",
+    "webrtc"
+  ],
+  "author": "Antigravity",
+  "license": "MIT",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "socket.io": "^4.8.1",
+    "socket.io-client": "^4.8.4"
+  }
+}

@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Birlikte İzle | Senkronize Dizi & Film Watch Party</title>
+  <meta name="description" content="Sevgilinizle veya arkadaşınızla YouTube ve video dosyalarını aynı anda, milisaniyelik senkronla ve canlı sohbetle izleyin.">
+  
+  <!-- Google Fonts: Outfit & Plus Jakarta Sans -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  
+  <!-- Socket.IO Client (Used for local Node server) -->
+  <script src="/socket.io/socket.io.js" onerror="console.log('Socket.IO sunucusu bulunamadı, Vercel WebRTC (P2P) moduna geçiliyor.')"></script>
+  
+  <!-- PeerJS (Used for Vercel Serverless / P2P Realtime WebRTC) -->
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  
+  <!-- YouTube IFrame API -->
+  <script src="https://www.youtube.com/iframe_api"></script>
+  
+  <!-- CSS Styles -->
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <!-- Floating Reactions Container -->
+  <div id="reactions-container" class="reactions-container" aria-hidden="true"></div>
+
+  <!-- Toast Notification System -->
+  <div id="toast-container" class="toast-container" role="status" aria-live="polite"></div>
+
+  <!-- VIEW 1: LOBBY / WELCOME (Giriş Ekranı) -->
+  <div id="view-lobby" class="view-container active">
+    <div class="lobby-card glassmorphism">
+      <div class="brand-badge">
+        <span class="heart-pulse">❤️</span>
+        <span>Cinema For Two</span>
+      </div>
+      
+      <h1 class="lobby-title">Birlikte İzle</h1>
+      <p class="lobby-subtitle">
+        Mesafeleri sıfırlayın. YouTube videolarını ve film linklerini partnerinizle tam senkronize şekilde aynı saniyede izleyin.
+      </p>
+
+      <div class="lobby-form">
+        <div class="input-group">
+          <label for="input-user-name">Adınız veya Takma Adınız</label>
+          <div class="input-wrapper">
+            <span class="input-icon">👤</span>
+            <input type="text" id="input-user-name" placeholder="Örn: Mert" maxlength="24" autocomplete="name" autofocus>
+          </div>
+        </div>
+
+        <!-- Conditional: If room link is opened directly -->
+        <div id="join-detected-container" class="join-detected-box hidden">
+          <div class="detected-info">
+            <span class="badge badge-primary">Davet Linki</span>
+            <p>Odaya katılmak üzeresiniz: <strong id="detected-room-id">------</strong></p>
+          </div>
+          <button id="btn-join-detected" class="btn btn-primary btn-glow btn-block">
+            <span>Odaya Katıl</span>
+            <span class="btn-arrow">→</span>
+          </button>
+          <div class="divider"><span>veya</span></div>
+        </div>
+
+        <!-- Default Actions: Create or Join -->
+        <div id="default-lobby-actions" class="lobby-actions">
+          <button id="btn-create-room" class="btn btn-primary btn-glow btn-block">
+            <span class="btn-icon">✨</span>
+            <span>Yeni Oda Oluştur</span>
+          </button>
+
+          <div class="divider"><span>veya bir koda katıl</span></div>
+
+          <div class="join-room-row">
+            <div class="input-wrapper">
+              <span class="input-icon">🔑</span>
+              <input type="text" id="input-room-code" placeholder="Oda Kodu (örn: ABC123)" maxlength="12" style="text-transform: uppercase;">
+            </div>
+            <button id="btn-join-room" class="btn btn-secondary">
+              Katıl
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Feature highlights -->
+      <div class="lobby-features">
+        <div class="feature-item">
+          <span class="feature-icon">⚡</span>
+          <span>Anlık Senkron</span>
+        </div>
+        <div class="feature-item">
+          <span class="feature-icon">💬</span>
+          <span>Canlı Sohbet</span>
+        </div>
+        <div class="feature-item">
+          <span class="feature-icon">🍿</span>
+          <span>YouTube & MP4</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- VIEW 2: WATCH ROOM (İzleme Odası Ekranı) -->
+  <div id="view-room" class="view-container hidden">
+    <!-- Top Navigation Bar -->
+    <header class="room-header glassmorphism">
+      <div class="header-left">
+        <div class="logo">
+          <span class="logo-icon">🎬</span>
+          <span class="logo-text">Birlikte<span class="text-gradient">İzle</span></span>
+        </div>
+
+        <div class="room-code-badge" id="btn-copy-room-link" title="Oda linkini kopyalamak için tıkla">
+          <span class="code-label">Oda:</span>
+          <span class="code-value" id="display-room-id">------</span>
+          <span class="copy-icon" id="copy-status-icon">📋</span>
+        </div>
+      </div>
+
+      <div class="header-center">
+        <!-- Partner Connection Status -->
+        <div id="partner-status-badge" class="status-badge waiting">
+          <span class="status-indicator"></span>
+          <span id="partner-status-text">Partner bekleniyor...</span>
+        </div>
+      </div>
+
+      <div class="header-right">
+        <!-- User role badge -->
+        <div id="my-role-badge" class="role-badge host">
+          <span id="my-role-icon">👑</span>
+          <span id="my-role-text">Host</span>
+        </div>
+
+        <!-- Quick actions -->
+        <button id="btn-share-link" class="btn btn-sm btn-outline" title="Davet Linkini Paylaş">
+          <span>🔗 Linki Paylaş</span>
+        </button>
+        <button id="btn-leave-room" class="btn btn-sm btn-danger-soft" title="Odadan Ayrıl">
+          <span>Çıkış</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Content Area: Video on Left, Chat on Right -->
+    <main class="room-main">
+      <!-- LEFT SECTION: VIDEO STAGE -->
+      <section class="video-stage">
+        <!-- Video Source Bar (Visible to Host or informative for Guest) -->
+        <div class="video-source-panel glassmorphism">
+          <div class="source-inputs" id="host-source-controls">
+            <div class="input-wrapper flex-grow">
+              <span class="input-icon">🔗</span>
+              <input type="url" id="input-video-url" placeholder="YouTube linki veya doğrudan .mp4/.webm video linki yapıştırın..." autocomplete="off">
+            </div>
+            <button id="btn-load-video" class="btn btn-primary">
+              <span>Videoyu Yükle</span>
+            </button>
+          </div>
+
+          <!-- Quick Samples for Easy Testing -->
+          <div class="quick-samples" id="quick-samples-bar">
+            <span class="samples-label">Hızlı Test Videoları:</span>
+            <button class="sample-tag" data-url="https://www.youtube.com/watch?v=aqz-KE-bpKQ">
+              🎵 Lofi Chill (YouTube)
+            </button>
+            <button class="sample-tag" data-url="https://www.youtube.com/watch?v=kJQP7kiw5Fk">
+              🍿 Despacito (YouTube)
+            </button>
+            <button class="sample-tag" data-url="https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4">
+              🐰 Big Buck Bunny (MP4)
+            </button>
+            <button class="sample-tag" data-url="https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4">
+              🚀 Tears of Steel (MP4)
+            </button>
+          </div>
+
+          <!-- Guest notice when waiting for host to pick video -->
+          <div id="guest-source-notice" class="guest-source-notice hidden">
+            <span class="notice-icon">📺</span>
+            <span id="guest-video-title">Host video seçiyor...</span>
+          </div>
+        </div>
+
+        <!-- The Video Screen Container (16:9 Aspect Ratio) -->
+        <div class="player-wrapper">
+          <div id="player-container" class="player-container">
+            <!-- Empty State / Placeholder -->
+            <div id="player-placeholder" class="player-placeholder">
+              <div class="placeholder-icon">🍿</div>
+              <h3>Henüz Video Yüklenmedi</h3>
+              <p id="placeholder-message">
+                Yukarıdaki alana bir <strong>YouTube</strong> linki veya doğrudan <strong>MP4</strong> video bağlantısı yapıştırıp "Videoyu Yükle"ye basın.
+              </p>
+            </div>
+
+            <!-- YouTube Iframe Target Container -->
+            <div id="yt-player-target" class="video-target hidden"></div>
+
+            <!-- HTML5 Video Target -->
+            <video id="html5-video-player" class="video-target hidden" playsinline preload="auto">
+              Tarayıcınız HTML5 video etiketini desteklemiyor.
+            </video>
+
+            <!-- Autoplay Unmute Overlay (Needed if browser blocks audio autoplay) -->
+            <div id="unmute-overlay" class="unmute-overlay hidden">
+              <button id="btn-unmute" class="btn btn-primary btn-glow">
+                <span>🔊 Sesi Aç ve Senkronize Ol</span>
+              </button>
+            </div>
+
+            <!-- Guest Control Overlay (Prevents guest from accidentally de-syncing) -->
+            <div id="guest-shield-overlay" class="guest-shield hidden" title="Oynatma kontrolü Host tarafındadır">
+              <div class="guest-shield-badge">
+                <span>👑 Kontrol Host'ta</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Video Control Bar -->
+        <div class="player-controls-panel glassmorphism">
+          <div class="controls-left">
+            <!-- Host Play/Pause Button -->
+            <button id="btn-host-toggle-play" class="btn btn-control-play" title="Oynat / Duraklat">
+              <span id="play-btn-icon">▶</span>
+              <span id="play-btn-text">Başlat</span>
+            </button>
+
+            <!-- Time Display -->
+            <div class="time-display">
+              <span id="current-time-text">00:00</span>
+              <span class="time-divider">/</span>
+              <span id="total-time-text">00:00</span>
+            </div>
+          </div>
+
+          <!-- Custom Seek / Progress Bar -->
+          <div class="controls-center">
+            <div class="progress-bar-container" id="seek-container">
+              <div class="progress-bar-buffered" id="progress-buffered"></div>
+              <div class="progress-bar-fill" id="progress-fill"></div>
+              <div class="progress-thumb" id="progress-thumb"></div>
+            </div>
+          </div>
+
+          <div class="controls-right">
+            <!-- Drift status & Force Sync button -->
+            <div id="sync-status-indicator" class="sync-indicator in-sync" title="Senkronizasyon Durumu">
+              <span class="sync-dot"></span>
+              <span id="sync-text">Senkronize</span>
+            </div>
+
+            <button id="btn-force-sync" class="btn btn-sm btn-outline" title="Host ile zorla eşitle">
+              <span>🔄 Eşitle</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Floating Reactions Bar -->
+        <div class="reaction-bar glassmorphism">
+          <span class="reaction-label">Tepki Gönder:</span>
+          <div class="reaction-buttons">
+            <button class="btn-reaction" data-emoji="❤️" title="Kalp">❤️</button>
+            <button class="btn-reaction" data-emoji="🍿" title="Mısır">🍿</button>
+            <button class="btn-reaction" data-emoji="😂" title="Gülme">😂</button>
+            <button class="btn-reaction" data-emoji="🥺" title="Duygusal">🥺</button>
+            <button class="btn-reaction" data-emoji="🔥" title="Ateş">🔥</button>
+            <button class="btn-reaction" data-emoji="👏" title="Alkış">👏</button>
+            <button class="btn-reaction" data-emoji="😱" title="Şaşkın">😱</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- RIGHT SECTION: LIVE CHAT -->
+      <section class="chat-section glassmorphism">
+        <!-- Chat Header -->
+        <div class="chat-header">
+          <div class="chat-title-box">
+            <span class="chat-icon">💬</span>
+            <h2>Canlı Sohbet</h2>
+          </div>
+          <div class="participants-count">
+            <span id="users-count-badge">👥 1 Kişi</span>
+          </div>
+        </div>
+
+        <!-- User List Mini Bar -->
+        <div class="user-pill-list" id="users-pill-list">
+          <!-- Populated dynamically -->
+        </div>
+
+        <!-- Chat Message Stream -->
+        <div class="chat-messages-container" id="chat-messages-container">
+          <!-- Messages will be appended dynamically -->
+        </div>
+
+        <!-- Chat Input Form -->
+        <form id="chat-form" class="chat-input-form">
+          <input type="text" id="input-chat-message" placeholder="Mesajınızı yazın..." maxlength="400" autocomplete="off">
+          <button type="submit" id="btn-send-message" class="btn btn-primary btn-send" title="Gönder">
+            <span>➤</span>
+          </button>
+        </form>
+      </section>
+    </main>
+  </div>
+
+  <!-- Share Modal Dialog -->
+  <div id="modal-share" class="modal-backdrop hidden">
+    <div class="modal-card glassmorphism">
+      <div class="modal-header">
+        <h3>💌 Partnerinizi Davet Edin</h3>
+        <button id="btn-close-modal" class="btn-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p>Aşağıdaki linki kopyalayıp partnerinize gönderin. Linke tıkladığında doğrudan bu odaya bağlanacaktır:</p>
+        
+        <div class="share-link-box">
+          <input type="text" id="share-link-input" readonly>
+          <button id="btn-modal-copy" class="btn btn-primary">
+            Kopyala
+          </button>
+        </div>
+
+        <div class="qr-info-note">
+          <span>💡 İpucu:</span> İkiniz de bağlandığınızda videoyu sadece host başlatır ve her iki tarafta milisaniye farkı olmadan başlar!
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Application Logic -->
+  <script src="/app.js"></script>
+</body>
+</html>
