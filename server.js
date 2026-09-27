@@ -16,13 +16,35 @@ const io = new Server(server, {
 
 const PORT = process.env.PORT || 3000;
 
+const fs = require('fs');
+
+// Helper to locate index.html regardless of environment (local or Vercel serverless)
+function getIndexPath() {
+  const candidates = [
+    path.join(__dirname, 'index.html'),
+    path.join(__dirname, 'public', 'index.html'),
+    path.join(process.cwd(), 'index.html'),
+    path.join(process.cwd(), 'public', 'index.html')
+  ];
+  return candidates.find(p => fs.existsSync(p)) || path.join(__dirname, 'index.html');
+}
+
 // Enable CORS & static files
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(__dirname));
+app.use(express.static(process.cwd()));
 
-// In-memory room storage
-const rooms = new Map();
+// Root Route - Serve Watch Party App
+app.get('/', (req, res) => {
+  res.sendFile(getIndexPath());
+});
+
+// SPA routing - deliver index.html on /room/:id
+app.get('/room/:roomId', (req, res) => {
+  res.sendFile(getIndexPath());
+});
 
 /**
  * YouTube Video ID extraction helper
@@ -382,9 +404,15 @@ io.on('connection', (socket) => {
   });
 });
 
-server.listen(PORT, () => {
-  console.log(`===============================================`);
-  console.log(`🎬 Dizi/Film Watch Party Sunucusu Çalışıyor!`);
-  console.log(`🚀 Adres: http://localhost:${PORT}`);
-  console.log(`===============================================`);
-});
+if (!process.env.VERCEL) {
+  server.listen(PORT, () => {
+    console.log(`===============================================`);
+    console.log(`🎬 Dizi/Film Watch Party Sunucusu Çalışıyor!`);
+    console.log(`🚀 Adres: http://localhost:${PORT}`);
+    console.log(`===============================================`);
+  });
+}
+
+// Export for Vercel Serverless / Node environments
+module.exports = app;
+module.exports.server = server;
